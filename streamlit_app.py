@@ -1,18 +1,20 @@
+import math
 import streamlit as st
 
 # Define functions at the top to ensure they are available when called
 
 # Function to calculate adjusted distance based on inputs
-def calculate_adjusted_distance(distance_to_hole, hole_elevation, wind_speed, wind_direction, power=100, spin=100):
+def calculate_adjusted_distance(distance_to_hole, hole_elevation, wind_speed, wind_direction, power=100):
     # Adjust for hole elevation (assume 3 feet of elevation affects roughly 1 yard)
     adjusted_distance = distance_to_hole + hole_elevation / 3
 
     # Wind adjustment based on speed and direction
     if wind_speed and wind_direction:
-        wind_adjustment = (wind_speed / 12) * distance_to_hole
         if is_headwind(wind_direction):
+            wind_adjustment = (wind_speed * 0.01) * distance_to_hole  # Add 1% per mph
             adjusted_distance += wind_adjustment
         elif is_tailwind(wind_direction):
+            wind_adjustment = (wind_speed * 0.005) * distance_to_hole  # Subtract 0.5% per mph
             adjusted_distance -= wind_adjustment
 
     # Adjust for power percentage if less than 100%
@@ -25,38 +27,62 @@ def calculate_adjusted_distance(distance_to_hole, hole_elevation, wind_speed, wi
 
 # Determines if wind direction is headwind (toward the golfer)
 def is_headwind(direction):
-    return direction in ["N", "NNW", "NNE", "NW", "NE"]
+    return direction in ["S", "SSW", "SSE", "SW", "SE"]
 
 # Determines if wind direction is tailwind (away from the golfer)
 def is_tailwind(direction):
-    return direction in ["S", "SSW", "SSE", "SW", "SE"]
+    return direction in ["N", "NNW", "NNE", "NW", "NE"]
 
-# Calculate left/right adjustment based on lie angle and wind
-def calculate_adjustment(lie_angle, wind_speed, wind_direction):
+# Calculate crosswind component
+def calculate_crosswind(wind_speed, wind_direction, shot_direction=0):
+    """
+    Calculates the crosswind component based on wind speed and relative wind angle.
+    :param wind_speed: Wind speed in mph
+    :param wind_direction: Wind direction in degrees (0° = North, 90° = East, etc.)
+    :param shot_direction: Shot direction in degrees (default is 0°, straight to pin)
+    :return: Crosswind component in mph
+    """
+    wind_degrees = wind_direction_to_degrees(wind_direction)
+    relative_angle = (wind_degrees - shot_direction + 360) % 360  # Normalize angle to [0, 360)
+    crosswind = abs(wind_speed * math.sin(math.radians(relative_angle)))
+    return round(crosswind, 2)
+
+# Map wind direction to degrees
+def wind_direction_to_degrees(direction):
+    wind_directions = {
+        "N": 0, "NNE": 22.5, "NE": 45, "ENE": 67.5, "E": 90, "ESE": 112.5,
+        "SE": 135, "SSE": 157.5, "S": 180, "SSW": 202.5, "SW": 225, "WSW": 247.5,
+        "W": 270, "WNW": 292.5, "NW": 315, "NNW": 337.5
+    }
+    return wind_directions.get(direction, 0)
+
+# Calculate left/right adjustment based on lie angle, crosswind, and distance
+def calculate_adjustment(lie_angle, wind_speed, wind_direction, distance_to_hole):
     # Parse the lie angle for direction and value
-    angle_value = float(lie_angle[:-1]) if lie_angle[:-1].isdigit() else 0
-    direction = lie_angle[-1].upper() if lie_angle else ""
+    if lie_angle:
+        angle_value = float(lie_angle[:-1]) if lie_angle[:-1].isdigit() else 0
+        direction = lie_angle[-1].upper()
+    else:
+        angle_value = 0
+        direction = ""
 
     adjustment = 0
 
-    # Adjust left or right based on lie angle direction
+    # Lie angle adjustment based on slope direction and degree
     if direction == "L":
-        adjustment += angle_value
+        adjustment -= angle_value * (distance_to_hole / 100)  # Aim right
     elif direction == "R":
-        adjustment -= angle_value
+        adjustment += angle_value * (distance_to_hole / 100)  # Aim left
 
-    # Wind impact on side adjustment
-    if wind_direction and wind_speed:
-        if wind_direction in ["W", "WNW", "WSW"]:
-            adjustment += wind_speed / 4
-        elif wind_direction in ["E", "ENE", "ESE"]:
-            adjustment -= wind_speed / 4
+    # Crosswind adjustment
+    crosswind = calculate_crosswind(wind_speed, wind_direction)
+    adjustment += crosswind * (distance_to_hole / 200)  # Crosswind scales with distance
 
     return round(adjustment)
 
 # Streamlit app code starts here
 
-st.title("Trackman Approach Caddy (TAC)")
+st.title("GolfSim Approach Caddy")
 
 # Define possible wind directions
 wind_directions = [
@@ -88,7 +114,10 @@ if submit_button:
     aim_adjustment = calculate_adjustment(
         lie_angle,
         wind_speed,
-        wind_direction
+        wind_direction,
+        distance_to_hole
     )
-    st.write(f"Suggested Range: {adjusted_distance['low']} - {adjusted_distance['high']} yards")
+    crosswind = calculate_crosswind(wind_speed, wind_direction)
+    st.write(f"Suggested Distance: {adjusted_distance['low']} - {adjusted_distance['high']} yards")
+    st.write(f"Crosswind Component: {crosswind} mph")
     st.write(f"Adjustment: Aim {abs(aim_adjustment)} yards {'left' if aim_adjustment > 0 else 'right'} of the pin")
