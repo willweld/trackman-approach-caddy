@@ -4,9 +4,13 @@ import streamlit as st
 # Define functions at the top to ensure they are available when called
 
 # Function to calculate adjusted distance based on inputs
-def calculate_adjusted_distance(distance_to_hole, hole_elevation, wind_speed, wind_direction, power=100):
+def calculate_adjusted_distance(distance_to_hole, hole_elevation, wind_speed, wind_direction, course_elevation, power=100):
     # Adjust for hole elevation (assume 3 feet of elevation affects roughly 1 yard)
     adjusted_distance = distance_to_hole + hole_elevation / 3
+
+    # Adjust for course elevation (reduce distance by 1% for every 500 feet)
+    elevation_adjustment = (course_elevation / 500) * 0.01 * distance_to_hole
+    adjusted_distance -= elevation_adjustment
 
     # Wind adjustment based on speed and direction
     if wind_speed and wind_direction:
@@ -109,6 +113,7 @@ if submit_button:
         hole_elevation,
         wind_speed,
         wind_direction,
+        course_elevation,
         power
     )
     aim_adjustment = calculate_adjustment(
